@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Travel Stamp Passport</title>
+    <style>
+        :root {
+            --bg-color: #f4f1ea;
+            --card-bg: #ffffff;
+            --primary-color: #5d4037;
+            --accent-color: #d32f2f;
+        }
+
+        body {
+            font-family: 'Tahoma', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            color: var(--primary-color);
+        }
+
+        .passport-container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border: 1px solid #e0e0e0;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px double var(--primary-color);
+            padding-bottom: 20px;
+        }
+
+        #map-container {
+            width: 100%;
+            height: 350px;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 40px;
+            border: 5px solid #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        #map { width: 100%; height: 100%; background: #eee; }
+
+        .stamp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 25px;
+        }
+
+        .stamp-card {
+            background: #fafafa;
+            border: 2px solid #eee;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stamp-placeholder {
+            width: 110px;
+            height: 110px;
+            margin: 0 auto 15px;
+            border: 3px dashed #bbb;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .stamp-placeholder.stamped {
+            border: 4px double var(--accent-color);
+        }
+
+        .btn-group { display: flex; flex-direction: column; gap: 8px; }
+
+        button {
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .checkin-btn { background: var(--primary-color); color: white; }
+        .upload-btn { background: #8d6e63; color: white; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+
+    <div class="passport-container">
+        <header>
+            <h1>TRAVEL STAMP</h1>
+            <p>บันทึกการเดินทางที่น่าจดจำของคุณ</p>
+        </header>
+
+        <div id="map-container">
+            <div id="map"></div>
+        </div>
+
+        <div class="stamp-grid" id="stampGrid"></div>
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+
+    <script>
+        // อัปเดตพิกัดสถานที่ทั้ง 7 แห่ง
+        const locations = [
+            { id: 1, name: "ฐานทับ ยอดไก่นักสู้กู้โลก", lat: 13.7563, lng: 100.5018 },
+            { id: 2, name: "สู่ความเวิ้งว้างอันไกลโพ่น", lat: 13.8100, lng: 100.5500 },
+            { id: 3, name: "ตามล่าหาวันพีช บ้านคุณสมพร", lat: 13.7000, lng: 100.4500 },
+            { id: 4, name: "บรรเทิง เสื้อกระจาย", lat: 13.7200, lng: 100.5200 },
+            { id: 5, name: "กลอนบทนั้นที่ฉันเสียวซีด", lat: 13.7600, lng: 100.6000 },
+            { id: 6, name: "Sleep Zeed", lat: 13.8200, lng: 100.6500 },
+            { id: 7, name: "ฐานทับสายตีหม้อ", lat: 13.9000, lng: 100.5000 }
+        ];
+
+        let map;
+        let markers = [];
+        let userStamps = JSON.parse(localStorage.getItem('myTravelStamps')) || {};
+        let currentUploadId = null;
+
+        function renderStamps() {
+            const grid = document.getElementById('stampGrid');
+            grid.innerHTML = '';
+            locations.forEach(loc => {
+                const isStamped = userStamps[loc.id];
+                const card = document.createElement('div');
+                card.className = 'stamp-card';
+                const defaultStamp = "https://cdn-icons-png.flaticon.com/512/3936/3936474.png";
+                const stampImg = isStamped ? (userStamps[loc.id].img || defaultStamp) : '';
+                
+                card.innerHTML = `
+                    <div class="stamp-placeholder ${isStamped ? 'stamped' : ''}" 
+                         id="img-${loc.id}" 
+                         style="background-image: url('${stampImg}')">
+                         ${!isStamped ? '?' : ''}
+                    </div>
+                    <h3>${loc.name}</h3>
+                    <div class="btn-group">
+                        <button class="checkin-btn" onclick="collectStamp(${loc.id})" ${isStamped ? 'disabled' : ''}>
+                            ${isStamped ? '✓ ประทับแล้ว' : 'ประทับตรา'}
+                        </button>
+                        <button class="upload-btn" onclick="triggerUpload(${loc.id})">
+                            อัปโหลดรูปจริง
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function collectStamp(id) {
+            userStamps[id] = { collected: true, img: null };
+            saveData();
+        }
+
+        function triggerUpload(id) {
+            currentUploadId = id;
+            document.getElementById('fileInput').click();
+        }
+
+        document.getElementById('fileInput').onchange = function(e) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                userStamps[currentUploadId] = { collected: true, img: event.target.result };
+                saveData();
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        };
+
+        function saveData() {
+            localStorage.setItem('myTravelStamps', JSON.stringify(userStamps));
+            renderStamps();
+            updateMarkers();
+        }
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: 13.7563, lng: 100.5018 },
+                zoom: 10
+            });
+            renderStamps();
+            updateMarkers();
+        }
+
+        function updateMarkers() {
+            markers.forEach(m => m.setMap(null));
+            locations.forEach(loc => {
+                if (userStamps[loc.id]) {
+                    const marker = new google.maps.Marker({
+                        position: { lat: loc.lat, lng: loc.lng },
+                        map: map,
+                        title: loc.name
+                    });
+                    markers.push(marker);
+                }
+            });
+        }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=ใส่_API_KEY_ของคุณที่นี่&callback=initMap" async defer></script>
+</body>
+</html>
